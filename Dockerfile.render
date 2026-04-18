@@ -27,5 +27,16 @@ try {
   console.log("[render-patch] skip:", e.message);
 }
 EOF
+# Fix: patch isEmptyResponseAssistantTurn to not false-positive on stopReason=stop
+# Non-Anthropic models via OpenRouter return stopReason=stop with valid content,
+# but the empty-response detection incorrectly flags them as incomplete turns.
+RUN find /opt/openclaw/app/dist/ -name '*.js' -exec grep -l 'isEmptyResponseAssistantTurn' {} \; | \
+    xargs -I{} sed -i 's/function isEmptyResponseAssistantTurn(params) {/function isEmptyResponseAssistantTurn(params) { var _a=params.attempt?.lastAssistant;if(_a?.stopReason==="stop"\&\&_a?.content?.length>0)return false;/' {}
+# Fix: set default model to DeepSeek V3.2 via OpenRouter
+RUN sed -i '/ui.dangerouslyDisableDeviceAuth/a\
+  const a = c.agents = c.agents || {};\
+  const d = a.defaults = a.defaults || {};\
+  const m = d.model = d.model || {};\
+  if (!m.primary || m.primary.includes("claude-opus-4-5")) m.primary = "openrouter/deepseek/deepseek-v3.2";' /app/scripts/render-patch-config.js
 # Inject patch AFTER configure.js so the config file exists
 RUN sed -i '/^node \/app\/scripts\/configure\.js$/a node /app/scripts/render-patch-config.js' /app/scripts/entrypoint.sh
