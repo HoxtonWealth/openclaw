@@ -27,13 +27,10 @@ try {
   console.log("[render-patch] skip:", e.message);
 }
 EOF
-# Fix: patch resolveIncompleteTurnPayloadText to not false-positive on stopReason=stop
-# Non-Anthropic models via OpenRouter return stopReason=stop with content that includes
-# thinking blocks + text, but the incomplete-turn detection (isReasoningOnlyAssistantTurn,
-# isEmptyResponseAssistantTurn) incorrectly flags them as failed turns.
-# Fix: return null (no error) when stopReason=stop and model returned content blocks.
+# Debug+Fix: patch resolveIncompleteTurnPayloadText for non-Anthropic OpenRouter models
+# Adds debug logging and bypasses incomplete-turn detection when model returned content.
 RUN find /opt/openclaw/app/dist/ -name '*.js' -exec grep -l 'resolveIncompleteTurnPayloadText' {} \; | \
-    xargs -I{} sed -i 's/function resolveIncompleteTurnPayloadText(params) {/function resolveIncompleteTurnPayloadText(params) { var _la=params.attempt?.lastAssistant;if(_la?.stopReason==="stop"\&\&_la?.content?.length>0)return null;/' {}
+    xargs -I{} sed -i 's/function resolveIncompleteTurnPayloadText(params) {/function resolveIncompleteTurnPayloadText(params) { var _la=params.attempt?.lastAssistant;var _ca=params.attempt?.currentAttemptAssistant;var _at=params.attempt?.assistantTexts;console.error("[DEBUG-RIPT] stopReason="+(_la?.stopReason)+" contentLen="+(_la?.content?.length)+" caStop="+(_ca?.stopReason)+" caContentLen="+(_ca?.content?.length)+" payloads="+params.payloadCount+" aTexts="+(_at?.length)+" aTextsJoin="+(_at?.join("").substring(0,100)));if((_la?.stopReason==="stop"||_ca?.stopReason==="stop")\&\&((_la?.content?.length>0)||(_ca?.content?.length>0)))return null;/' {}
 # Fix: set default model to DeepSeek V3.2 via OpenRouter
 RUN sed -i '/ui.dangerouslyDisableDeviceAuth/a\
   const a = c.agents = c.agents || {};\
