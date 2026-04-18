@@ -27,17 +27,25 @@ try {
   console.log("[render-patch] skip:", e.message);
 }
 EOF
-# Fix: suppress incomplete-turn false positives for non-Anthropic models via OpenRouter
-# Non-Anthropic models may return stopReason=stop with empty content when the agent
-# payload (system prompt + tools) is too complex. Return null to suppress the error
-# and let the empty-response retry handle it gracefully.
-RUN find /opt/openclaw/app/dist/ -name '*.js' -exec grep -l 'resolveIncompleteTurnPayloadText' {} \; | \
-    xargs -I{} sed -i 's/function resolveIncompleteTurnPayloadText(params) {/function resolveIncompleteTurnPayloadText(params) { if(params.attempt?.lastAssistant?.stopReason==="stop")return null;/' {}
+# Fix #67295: OpenRouter baseUrl is wrong in per-agent models.json
+# 'openclaw agents add' writes https://openrouter.ai/v1 instead of
+# https://openrouter.ai/api/v1, causing 404s for all non-Anthropic models.
+# Fix at runtime by patching the per-agent models.json after configure.js.
+RUN sed -i '/console.log.*render-patch.*config patched/i\
+  try {\
+    const mf = "/data/.openclaw/agents/main/agent/models.json";\
+    const md = JSON.parse(fs.readFileSync(mf, "utf8"));\
+    if (md.providers?.openrouter?.baseUrl === "https://openrouter.ai/v1") {\
+      md.providers.openrouter.baseUrl = "https://openrouter.ai/api/v1";\
+      fs.writeFileSync(mf, JSON.stringify(md, null, 2));\
+      console.log("[render-patch] fixed OpenRouter baseUrl: /v1 -> /api/v1");\
+    }\
+  } catch (e2) { console.log("[render-patch] models.json skip:", e2.message); }' /app/scripts/render-patch-config.js
 # Fix: set default model to DeepSeek V3.2 via OpenRouter
 RUN sed -i '/ui.dangerouslyDisableDeviceAuth/a\
   const a = c.agents = c.agents || {};\
   const d = a.defaults = a.defaults || {};\
   const m = d.model = d.model || {};\
-  if (!m.primary || m.primary.includes("claude-opus-4-5")) m.primary = "openrouter/qwen/qwen3-30b-a3b";' /app/scripts/render-patch-config.js
+  if (!m.primary || m.primary.includes("claude-opus-4-5") || m.primary.includes("qwen3-30b")) m.primary = "openrouter/deepseek/deepseek-v3.2";' /app/scripts/render-patch-config.js
 # Inject patch AFTER configure.js so the config file exists
 RUN sed -i '/^node \/app\/scripts\/configure\.js$/a node /app/scripts/render-patch-config.js' /app/scripts/entrypoint.sh
