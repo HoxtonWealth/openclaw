@@ -30,17 +30,23 @@ EOF
 # Fix #67295: OpenRouter baseUrl is wrong in per-agent models.json
 # 'openclaw agents add' writes https://openrouter.ai/v1 instead of
 # https://openrouter.ai/api/v1, causing 404s for all non-Anthropic models.
-# Fix at runtime by patching the per-agent models.json after configure.js.
-RUN sed -i '/console.log.*render-patch.*config patched/i\
-  try {\
-    const mf = "/data/.openclaw/agents/main/agent/models.json";\
-    const md = JSON.parse(fs.readFileSync(mf, "utf8"));\
-    if (md.providers?.openrouter?.baseUrl === "https://openrouter.ai/v1") {\
-      md.providers.openrouter.baseUrl = "https://openrouter.ai/api/v1";\
-      fs.writeFileSync(mf, JSON.stringify(md, null, 2));\
-      console.log("[render-patch] fixed OpenRouter baseUrl: /v1 -> /api/v1");\
-    }\
-  } catch (e2) { console.log("[render-patch] models.json skip:", e2.message); }' /app/scripts/render-patch-config.js
+# models.json is created during gateway startup (after configure.js), so we
+# run a background fixer that waits for any models.json to appear and patches it.
+COPY <<'FIXEOF' /app/scripts/fix-openrouter-baseurl.sh
+#!/bin/bash
+for i in $(seq 1 30); do
+  sleep 2
+  for mf in $(find /data/.openclaw /root/.openclaw -name "models.json" 2>/dev/null); do
+    if grep -q '"https://openrouter.ai/v1"' "$mf" 2>/dev/null; then
+      sed -i 's|"https://openrouter.ai/v1"|"https://openrouter.ai/api/v1"|g' "$mf"
+      echo "[render-patch] fixed OpenRouter baseUrl in $mf"
+    fi
+  done
+done
+FIXEOF
+RUN chmod +x /app/scripts/fix-openrouter-baseurl.sh
+# Launch the fixer in background after configure.js
+RUN sed -i '/^node \/app\/scripts\/render-patch-config.js$/a /app/scripts/fix-openrouter-baseurl.sh \&' /app/scripts/entrypoint.sh
 # Fix: set default model to DeepSeek V3.2 via OpenRouter
 RUN sed -i '/ui.dangerouslyDisableDeviceAuth/a\
   const a = c.agents = c.agents || {};\
