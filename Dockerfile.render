@@ -27,15 +27,17 @@ try {
   console.log("[render-patch] skip:", e.message);
 }
 EOF
-# Debug+Fix: patch resolveIncompleteTurnPayloadText for non-Anthropic OpenRouter models
-# Adds debug logging and bypasses incomplete-turn detection when model returned content.
+# Fix: suppress incomplete-turn false positives for non-Anthropic models via OpenRouter
+# Non-Anthropic models may return stopReason=stop with empty content when the agent
+# payload (system prompt + tools) is too complex. Return null to suppress the error
+# and let the empty-response retry handle it gracefully.
 RUN find /opt/openclaw/app/dist/ -name '*.js' -exec grep -l 'resolveIncompleteTurnPayloadText' {} \; | \
-    xargs -I{} sed -i 's/function resolveIncompleteTurnPayloadText(params) {/function resolveIncompleteTurnPayloadText(params) { var _la=params.attempt?.lastAssistant;var _ca=params.attempt?.currentAttemptAssistant;var _at=params.attempt?.assistantTexts;console.error("[DEBUG-RIPT] stopReason="+(_la?.stopReason)+" contentLen="+(_la?.content?.length)+" caStop="+(_ca?.stopReason)+" caContentLen="+(_ca?.content?.length)+" payloads="+params.payloadCount+" aTexts="+(_at?.length)+" aTextsJoin="+(_at?.join("").substring(0,100)));if((_la?.stopReason==="stop"||_ca?.stopReason==="stop")\&\&((_la?.content?.length>0)||(_ca?.content?.length>0)))return null;/' {}
+    xargs -I{} sed -i 's/function resolveIncompleteTurnPayloadText(params) {/function resolveIncompleteTurnPayloadText(params) { if(params.attempt?.lastAssistant?.stopReason==="stop")return null;/' {}
 # Fix: set default model to DeepSeek V3.2 via OpenRouter
 RUN sed -i '/ui.dangerouslyDisableDeviceAuth/a\
   const a = c.agents = c.agents || {};\
   const d = a.defaults = a.defaults || {};\
   const m = d.model = d.model || {};\
-  if (!m.primary || m.primary.includes("claude-opus-4-5")) m.primary = "openrouter/deepseek/deepseek-v3.2";' /app/scripts/render-patch-config.js
+  if (!m.primary || m.primary.includes("claude-opus-4-5")) m.primary = "openrouter/qwen/qwen3-30b-a3b";' /app/scripts/render-patch-config.js
 # Inject patch AFTER configure.js so the config file exists
 RUN sed -i '/^node \/app\/scripts\/configure\.js$/a node /app/scripts/render-patch-config.js' /app/scripts/entrypoint.sh
