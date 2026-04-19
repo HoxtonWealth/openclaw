@@ -49,13 +49,15 @@ while true; do
 done
 FIXEOF
 RUN chmod +x /app/scripts/fix-openrouter-baseurl.sh
-# Launch the fixer in background after configure.js
-RUN sed -i '/^node \/app\/scripts\/render-patch-config.js$/a /app/scripts/fix-openrouter-baseurl.sh \&' /app/scripts/entrypoint.sh
 # Fix: set default model to DeepSeek V3.2 via OpenRouter
 RUN sed -i '/ui.dangerouslyDisableDeviceAuth/a\
   const a = c.agents = c.agents || {};\
   const d = a.defaults = a.defaults || {};\
   const m = d.model = d.model || {};\
   if (!m.primary || m.primary.includes("claude-opus-4-5") || m.primary.includes("qwen3-30b")) m.primary = "openrouter/deepseek/deepseek-v3.2";' /app/scripts/render-patch-config.js
-# Inject patch AFTER configure.js so the config file exists
+# Inject patch AFTER configure.js so the config file exists.
+# Order matters: render-patch-config.js must be injected BEFORE the fixer,
+# because the fixer's sed anchors on the render-patch-config.js line.
 RUN sed -i '/^node \/app\/scripts\/configure\.js$/a node /app/scripts/render-patch-config.js' /app/scripts/entrypoint.sh
+# Launch the baseUrl fixer in background after the config patch runs.
+RUN sed -i '/^node \/app\/scripts\/render-patch-config.js$/a /app/scripts/fix-openrouter-baseurl.sh \&' /app/scripts/entrypoint.sh
