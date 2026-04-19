@@ -2,10 +2,11 @@ services:
   - type: web
     name: openclaw
     runtime: docker
-    plan: starter
-    healthCheckPath: /health
+    dockerfilePath: ./Dockerfile.render
+    plan: standard
+    region: singapore
     envVars:
-      - key: OPENCLAW_GATEWAY_PORT
+      - key: PORT
         value: "8080"
       - key: OPENCLAW_STATE_DIR
         value: /data/.openclaw
@@ -13,6 +14,14 @@ services:
         value: /data/workspace
       - key: OPENCLAW_GATEWAY_TOKEN
         generateValue: true
+      - key: AUTH_USERNAME
+        sync: false
+      - key: AUTH_PASSWORD
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENCLAW_ALLOWED_ORIGINS
+        sync: false
     disk:
       name: openclaw-data
       mountPath: /data

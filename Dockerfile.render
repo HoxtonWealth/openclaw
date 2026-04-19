@@ -34,32 +34,19 @@ EOF
 # run a background fixer that waits for any models.json to appear and patches it.
 COPY <<'FIXEOF' /app/scripts/fix-openrouter-baseurl.sh
 #!/bin/bash
-echo "[baseurl-fix] starting background watcher"
-for i in $(seq 1 60); do
-  sleep 2
-  found=$(find /data /root -name "models.json" -path "*openclaw*" 2>/dev/null)
-  if [ -n "$found" ]; then
-    for mf in $found; do
-      echo "[baseurl-fix] found: $mf"
-      if grep -q 'openrouter.ai/v1' "$mf" 2>/dev/null; then
-        baseurl=$(grep -o '"https://openrouter.ai[^"]*"' "$mf" | head -1)
-        echo "[baseurl-fix] current baseUrl=$baseurl in $mf"
-        if echo "$baseurl" | grep -qv '/api/v1'; then
-          sed -i 's|openrouter.ai/v1|openrouter.ai/api/v1|g' "$mf"
-          echo "[baseurl-fix] FIXED baseUrl in $mf"
-        else
-          echo "[baseurl-fix] baseUrl already correct in $mf"
-        fi
-      else
-        echo "[baseurl-fix] no openrouter baseUrl in $mf"
-      fi
-    done
-    break
-  fi
+# Unbounded watcher: patches any models.json that contains the wrong
+# OpenRouter baseUrl, whenever it appears. Also re-patches if the file
+# is recreated (e.g. after a new `openclaw agents add`).
+echo "[baseurl-fix] starting persistent watcher"
+while true; do
+  for mf in $(find /data /root -name "models.json" -path "*openclaw*" 2>/dev/null); do
+    if grep -q 'openrouter.ai/v1' "$mf" 2>/dev/null && ! grep -q 'openrouter.ai/api/v1' "$mf" 2>/dev/null; then
+      sed -i 's|openrouter.ai/v1|openrouter.ai/api/v1|g' "$mf"
+      echo "[baseurl-fix] patched $mf"
+    fi
+  done
+  sleep 5
 done
-if [ -z "$found" ]; then
-  echo "[baseurl-fix] no models.json found after 120s — may not exist yet"
-fi
 FIXEOF
 RUN chmod +x /app/scripts/fix-openrouter-baseurl.sh
 # Launch the fixer in background after configure.js
